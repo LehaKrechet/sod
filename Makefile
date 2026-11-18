@@ -1,15 +1,10 @@
 CXX ?= g++
-CXXFLAGS ?= -std=c++17 -O2 -Wall -Wextra -Wpedantic -pthread
+CXXFLAGS ?= -std=c++17 -O3 -march=native -Wall -Wextra -Wpedantic -pthread
 LDFLAGS ?= -pthread
 
-TARGET = sod
-SRC = src/main.cpp
-
-.PHONY: all clean
-all: $(TARGET)
-
-$(TARGET): $(SRC)
-	$(CXX) $(CXXFLAGS) -o $@ $(SRC) $(LDFLAGS)
-
+all: sod
+sod: src/main.cpp
+	$(CXX) $(CXXFLAGS) -o $@ $< $(LDFLAGS)
 clean:
-	rm -f $(TARGET)
+	rm -f sod
+.PHONY: all clean

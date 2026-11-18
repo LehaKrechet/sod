@@ -1,452 +1,103 @@
 #include <arpa/inet.h>
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
 #include <csignal>
 #include <cstdint>
-#include <cstdio>
-#include <cstring>
 #include <deque>
 #include <iomanip>
 #include <iostream>
 #include <mutex>
-#include <net/if.h>
+#include <numeric>
 #include <random>
 #include <set>
 #include <string>
 #include <thread>
 #include <unordered_map>
-#include <vector>
-#include <algorithm>
-#include <numeric>
 #include <sys/socket.h>
-#include <sys/types.h>
 #include <unistd.h>
 
 namespace {
 using Clock = std::chrono::steady_clock;
-constexpr uint32_t MAGIC = 0x534F4431; // "SOD1"
-constexpr uint32_t VERSION = 1;
-constexpr uint32_t HEARTBEAT = 1;
-constexpr uint32_t REQUEST = 2;
-constexpr uint32_t RESPONSE = 3;
-constexpr double TARGET_US = 200.0;
-constexpr auto PEER_TIMEOUT = std::chrono::seconds(3);
-
-#pragma pack(push, 1)
-struct Packet {
-    uint32_t magic;
-    uint32_t version;
-    uint32_t type;
-    uint32_t id_hi;
-    uint32_t id_lo;
-    uint32_t target_hi;
-    uint32_t target_lo;
-    uint32_t seq;
-    uint32_t value;
-};
+constexpr uint32_t MAGIC=0x534F4431, VERSION=1, HEARTBEAT=1, REQUEST=2, RESPONSE=3;
+constexpr double LIMIT_US=200.0;
+constexpr auto PEER_TIMEOUT=std::chrono::seconds(3);
+#pragma pack(push,1)
+struct Packet { uint32_t magic,version,type,id_hi,id_lo,target_hi,target_lo,seq,value; };
 #pragma pack(pop)
-
 std::atomic<bool> running{true};
-
-void on_signal(int) { running.store(false); }
-
-uint64_t make_id() {
-    std::random_device rd;
-    uint64_t v = (static_cast<uint64_t>(rd()) << 32) ^ rd();
-    v ^= (static_cast<uint64_t>(getpid()) << 16);
-    v ^= static_cast<uint64_t>(
-        std::chrono::high_resolution_clock::now().time_since_epoch().count());
-    return v ? v : 1;
-}
-
-uint32_t hi(uint64_t v) { return static_cast<uint32_t>(v >> 32); }
-uint32_t lo(uint64_t v) { return static_cast<uint32_t>(v & 0xffffffffu); }
-uint64_t join_id(uint32_t h, uint32_t l) {
-    return (static_cast<uint64_t>(h) << 32) | l;
-}
-
-Packet make_packet(uint32_t type, uint64_t id, uint64_t target,
-                   uint32_t seq, uint32_t value = 0) {
-    Packet p{};
-    p.magic = htonl(MAGIC);
-    p.version = htonl(VERSION);
-    p.type = htonl(type);
-    p.id_hi = htonl(hi(id));
-    p.id_lo = htonl(lo(id));
-    p.target_hi = htonl(hi(target));
-    p.target_lo = htonl(lo(target));
-    p.seq = htonl(seq);
-    p.value = htonl(value);
-    return p;
-}
-
-uint32_t field(uint32_t v) { return ntohl(v); }
-uint64_t packet_id(const Packet& p) {
-    return join_id(field(p.id_hi), field(p.id_lo));
-}
-uint64_t packet_target(const Packet& p) {
-    return join_id(field(p.target_hi), field(p.target_lo));
-}
-
-struct Peer {
-    Clock::time_point last_seen;
-};
-
-struct Config {
-    std::string group = "239.0.0.1";
-    std::string iface = "0.0.0.0";
-    uint16_t port = 5000;
-    unsigned interval_us = 10000;
-};
-
-class Node {
+void stop(int){running=false;}
+uint64_t make_id(){std::random_device r; uint64_t x=(uint64_t(r())<<32)^r()^(uint64_t(getpid())<<16)^Clock::now().time_since_epoch().count(); return x?x:1;}
+uint32_t hi(uint64_t x){return uint32_t(x>>32);} uint32_t lo(uint64_t x){return uint32_t(x);}
+uint64_t join(uint32_t h,uint32_t l){return (uint64_t(h)<<32)|l;}
+uint32_t H(uint32_t x){return ntohl(x);} uint32_t N(uint32_t x){return htonl(x);}
+Packet make_packet(uint32_t t,uint64_t id,uint64_t target,uint32_t seq,uint32_t val=0){return {N(MAGIC),N(VERSION),N(t),N(hi(id)),N(lo(id)),N(hi(target)),N(lo(target)),N(seq),N(val)};}
+uint64_t sender(const Packet&p){return join(H(p.id_hi),H(p.id_lo));}
+uint64_t target(const Packet&p){return join(H(p.target_hi),H(p.target_lo));}
+struct Config{std::string group="239.0.0.1",iface="0.0.0.0"; uint16_t port=5000; unsigned interval_us=1000;};
+struct Peer{Clock::time_point seen;};
+class Node{
 public:
-    explicit Node(Config cfg) : cfg_(std::move(cfg)), id_(make_id()) {}
-
-    bool init() {
-        sock_ = ::socket(AF_INET, SOCK_DGRAM, 0);
-        if (sock_ < 0) { perror("socket"); return false; }
-
-        int yes = 1;
-        if (setsockopt(sock_, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(yes)) < 0) {
-            perror("SO_REUSEADDR"); return false;
-        }
-
-        timeval tv{};
-        tv.tv_sec = 0;
-        tv.tv_usec = 100000;
-        setsockopt(sock_, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
-
-        sockaddr_in local{};
-        local.sin_family = AF_INET;
-        local.sin_port = htons(cfg_.port);
-        local.sin_addr.s_addr = htonl(INADDR_ANY);
-        if (bind(sock_, reinterpret_cast<sockaddr*>(&local), sizeof(local)) < 0) {
-            perror("bind"); return false;
-        }
-
-        ip_mreq mreq{};
-        if (inet_pton(AF_INET, cfg_.group.c_str(), &mreq.imr_multiaddr) != 1) {
-            std::cerr << "Некорректный multicast-адрес: " << cfg_.group << "\n";
-            return false;
-        }
-        if (inet_pton(AF_INET, cfg_.iface.c_str(), &mreq.imr_interface) != 1) {
-            std::cerr << "Некорректный IPv4 интерфейса: " << cfg_.iface << "\n";
-            return false;
-        }
-        if (setsockopt(sock_, IPPROTO_IP, IP_ADD_MEMBERSHIP, &mreq, sizeof(mreq)) < 0) {
-            perror("IP_ADD_MEMBERSHIP"); return false;
-        }
-
-        unsigned char ttl = 1;
-        unsigned char loop = 1;
-        setsockopt(sock_, IPPROTO_IP, IP_MULTICAST_TTL, &ttl, sizeof(ttl));
-        setsockopt(sock_, IPPROTO_IP, IP_MULTICAST_LOOP, &loop, sizeof(loop));
-        if (mreq.imr_interface.s_addr != htonl(INADDR_ANY)) {
-            setsockopt(sock_, IPPROTO_IP, IP_MULTICAST_IF,
-                       &mreq.imr_interface, sizeof(mreq.imr_interface));
-        }
-
-        dest_.sin_family = AF_INET;
-        dest_.sin_port = htons(cfg_.port);
-        if (inet_pton(AF_INET, cfg_.group.c_str(), &dest_.sin_addr) != 1) return false;
-        return true;
-    }
-
-    void run() {
-        std::signal(SIGINT, on_signal);
-        std::signal(SIGTERM, on_signal);
-
-        receiver_ = std::thread(&Node::receive_loop, this);
-        auto next_heartbeat = Clock::now();
-        auto next_cycle = Clock::now();
-        auto next_draw = Clock::now();
-
-        while (running.load()) {
-            const auto now = Clock::now();
-
-            if (now >= next_heartbeat) {
-                send_packet(make_packet(HEARTBEAT, id_, 0, 0));
-                next_heartbeat = now + std::chrono::seconds(1);
-            }
-
-            if (now >= next_cycle) {
-                run_cycle();
-                next_cycle = Clock::now() + std::chrono::microseconds(cfg_.interval_us);
-            }
-
-            if (now >= next_draw) {
-                draw_dashboard();
-                next_draw = now + std::chrono::milliseconds(250);
-            }
-            std::this_thread::sleep_for(std::chrono::microseconds(50));
-        }
-
-        if (receiver_.joinable()) receiver_.join();
-        if (sock_ >= 0) close(sock_);
-        std::cout << "\nЗавершение узла.\n";
-    }
-
+ explicit Node(Config c):cfg(std::move(c)),id(make_id()){}
+ bool init(){
+  fd=socket(AF_INET,SOCK_DGRAM,0); if(fd<0){perror("socket");return false;}
+  int yes=1,buf=1<<20; setsockopt(fd,SOL_SOCKET,SO_REUSEADDR,&yes,sizeof yes); setsockopt(fd,SOL_SOCKET,SO_RCVBUF,&buf,sizeof buf); setsockopt(fd,SOL_SOCKET,SO_SNDBUF,&buf,sizeof buf);
+  timeval tv{0,100000}; setsockopt(fd,SOL_SOCKET,SO_RCVTIMEO,&tv,sizeof tv);
+  sockaddr_in local{}; local.sin_family=AF_INET;local.sin_port=htons(cfg.port);local.sin_addr.s_addr=htonl(INADDR_ANY);
+  if(bind(fd,(sockaddr*)&local,sizeof local)<0){perror("bind");return false;}
+  ip_mreq m{}; if(inet_pton(AF_INET,cfg.group.c_str(),&m.imr_multiaddr)!=1||inet_pton(AF_INET,cfg.iface.c_str(),&m.imr_interface)!=1){std::cerr<<"Invalid group/interface\n";return false;}
+  if(setsockopt(fd,IPPROTO_IP,IP_ADD_MEMBERSHIP,&m,sizeof m)<0){perror("IP_ADD_MEMBERSHIP");return false;}
+  unsigned char ttl=1,loop=1;setsockopt(fd,IPPROTO_IP,IP_MULTICAST_TTL,&ttl,sizeof ttl);setsockopt(fd,IPPROTO_IP,IP_MULTICAST_LOOP,&loop,sizeof loop);
+  if(m.imr_interface.s_addr!=htonl(INADDR_ANY))setsockopt(fd,IPPROTO_IP,IP_MULTICAST_IF,&m.imr_interface,sizeof m.imr_interface);
+  dest.sin_family=AF_INET;dest.sin_port=htons(cfg.port);inet_pton(AF_INET,cfg.group.c_str(),&dest.sin_addr);return true;
+ }
+ void run(){
+  signal(SIGINT,stop);signal(SIGTERM,stop);rx=std::thread(&Node::receive,this);ui=std::thread(&Node::dashboard,this);
+  auto hb=Clock::now(),next=hb;
+  while(running){auto now=Clock::now();if(now>=hb){send(make_packet(HEARTBEAT,id,0,0));hb=now+std::chrono::seconds(1);}if(now>=next){cycle();next=Clock::now()+std::chrono::microseconds(cfg.interval_us);}std::this_thread::sleep_until(std::min(next,hb));}
+  if (rx.joinable()) rx.join();
+  if (ui.joinable()) ui.join();
+  close(fd);
+  std::cout << "\nStopped.\n";
+ }
 private:
-    void send_packet(const Packet& p) {
-        const auto n = sendto(sock_, &p, sizeof(p), 0,
-                              reinterpret_cast<const sockaddr*>(&dest_), sizeof(dest_));
-        (void)n;
-    }
-
-    void receive_loop() {
-        while (running.load()) {
-            Packet p{};
-            sockaddr_in from{};
-            socklen_t from_len = sizeof(from);
-            const ssize_t n = recvfrom(sock_, &p, sizeof(p), 0,
-                                       reinterpret_cast<sockaddr*>(&from), &from_len);
-            if (n < static_cast<ssize_t>(sizeof(Packet))) continue;
-            if (field(p.magic) != MAGIC || field(p.version) != VERSION) continue;
-
-            const uint64_t sender = packet_id(p);
-            if (sender == id_) continue; // multicast loopback: ignore own packet
-
-            const uint32_t type = field(p.type);
-            const auto now = Clock::now();
-
-            if (type == HEARTBEAT || type == REQUEST || type == RESPONSE) {
-                {
-                    std::lock_guard<std::mutex> lock(state_mtx_);
-                    peers_[sender].last_seen = now;
-                }
-            }
-
-            if (type == REQUEST) {
-                // Каждый узел отвечает непосредственно multicast-ответом.
-                const uint32_t seq = field(p.seq);
-                const uint32_t input = field(p.value);
-                const uint32_t result = input + 1; // тестовая заглушка: 1 + 1
-                send_packet(make_packet(RESPONSE, id_, sender, seq, result));
-            } else if (type == RESPONSE && packet_target(p) == id_) {
-                const uint32_t seq = field(p.seq);
-                {
-                    std::lock_guard<std::mutex> lock(cycle_mtx_);
-                    if (pending_ && seq == pending_seq_) {
-                        received_.insert(sender);
-                    }
-                }
-                cycle_cv_.notify_one();
-            }
-        }
-    }
-
-    std::set<uint64_t> active_peers() {
-        std::set<uint64_t> result;
-        const auto now = Clock::now();
-        std::lock_guard<std::mutex> lock(state_mtx_);
-        for (auto it = peers_.begin(); it != peers_.end();) {
-            if (now - it->second.last_seen > PEER_TIMEOUT) {
-                it = peers_.erase(it);
-            } else {
-                result.insert(it->first);
-                ++it;
-            }
-        }
-        return result;
-    }
-
-    void run_cycle() {
-        const uint32_t seq = ++sequence_;
-        const auto expected = active_peers();
-        const auto start = Clock::now();
-
-        {
-            std::lock_guard<std::mutex> lock(cycle_mtx_);
-            pending_ = true;
-            pending_seq_ = seq;
-            expected_ = expected;
-            received_.clear();
-        }
-
-        // value=1; обработчик каждого узла вычисляет 1+1 и возвращает 2.
-        send_packet(make_packet(REQUEST, id_, 0, seq, 1));
-
-        const auto deadline = start + std::chrono::microseconds(200);
-        {
-            std::unique_lock<std::mutex> lock(cycle_mtx_);
-            cycle_cv_.wait_until(lock, deadline, [&] {
-                return !running.load() ||
-                       std::includes(received_.begin(), received_.end(),
-                                     expected_.begin(), expected_.end());
-            });
-            pending_ = false;
-        }
-
-        const auto finish = Clock::now();
-        const double elapsed = std::chrono::duration<double, std::micro>(finish - start).count();
-
-        size_t got = 0;
-        {
-            std::lock_guard<std::mutex> lock(cycle_mtx_);
-            got = received_.size();
-        }
-        const size_t wanted = expected.size();
-        const bool complete = (got >= wanted);
-        {
-            std::lock_guard<std::mutex> lock(stats_mtx_);
-            samples_.push_back(elapsed);
-            if (samples_.size() > 80) samples_.pop_front();
-            ++cycles_;
-            if (!complete) ++missed_cycles_;
-            if (elapsed > TARGET_US) ++over_limit_;
-            last_us_ = elapsed;
-            last_expected_ = wanted;
-            last_received_ = got;
-            last_complete_ = complete;
-        }
-    }
-
-    void draw_dashboard() {
-        std::vector<double> samples;
-        uint64_t cycles, over, missed;
-        double last;
-        size_t expected, received;
-        bool complete;
-        {
-            std::lock_guard<std::mutex> lock(stats_mtx_);
-            samples.assign(samples_.begin(), samples_.end());
-            cycles = cycles_;
-            over = over_limit_;
-            missed = missed_cycles_;
-            last = last_us_;
-            expected = last_expected_;
-            received = last_received_;
-            complete = last_complete_;
-        }
-        auto peers = active_peers();
-
-        double avg = 0, minv = 0, maxv = 0;
-        if (!samples.empty()) {
-            avg = std::accumulate(samples.begin(), samples.end(), 0.0) / samples.size();
-            auto mm = std::minmax_element(samples.begin(), samples.end());
-            minv = *mm.first;
-            maxv = *mm.second;
-        }
-
-        std::cout << "\033[2J\033[H";
-        std::cout << "============================================================\n";
-        std::cout << "             ПО «СОД» — P2P UDP MULTICAST MONITOR\n";
-        std::cout << "============================================================\n";
-        std::cout << "Узел ID: " << std::hex << id_ << std::dec
-                  << "   Группа: " << cfg_.group << ":" << cfg_.port
-                  << "   Интервал: " << cfg_.interval_us << " мкс\n";
-        std::cout << "Режим: все узлы равноправны; центрального координатора нет.\n\n";
-        std::cout << "Циклов: " << cycles << "   Активных соседей: " << peers.size()
-                  << "   Последний обмен: " << received << "/" << expected
-                  << (complete ? " [OK]" : " [TIMEOUT]") << "\n";
-        std::cout << std::fixed << std::setprecision(2);
-        std::cout << "Последний цикл: " << last << " мкс"
-                  << "   Среднее: " << avg << " мкс"
-                  << "   Мин: " << minv << " мкс"
-                  << "   Макс: " << maxv << " мкс\n";
-        std::cout << "Превышений 200 мкс: " << over
-                  << "   Циклов без всех ответов: " << missed << "\n\n";
-
-        std::cout << "ДИАГРАММА ВРЕМЕНИ ПОСЛЕДНИХ ЦИКЛОВ (каждый # ≈ 5 мкс)\n";
-        std::cout << "250 |";
-        for (size_t i = 0; i < samples.size(); ++i) std::cout << ' ';
-        std::cout << "\n200 |";
-        for (double v : samples) {
-            int bars = std::min(50, static_cast<int>(v / 5.0));
-            for (int j = 0; j < bars; ++j) std::cout << '#';
-            if (v > TARGET_US) std::cout << '!';
-            std::cout << "\n    |";
-        }
-        std::cout << "\n     ";
-        for (size_t i = 0; i < samples.size(); ++i) std::cout << "-";
-        std::cout << "\n     старые ------------------------------------> новые\n\n";
-
-        std::cout << "УЗЛЫ В СЕТИ (таймаут обнаружения: 3 секунды)\n";
-        if (peers.empty()) std::cout << "  Пока нет обнаруженных соседей. Запустите программу на другом ПК.\n";
-        else {
-            std::lock_guard<std::mutex> lock(state_mtx_);
-            for (uint64_t peer : peers) {
-                auto it = peers_.find(peer);
-                if (it != peers_.end()) {
-                    auto age = std::chrono::duration_cast<std::chrono::milliseconds>(
-                        Clock::now() - it->second.last_seen).count();
-                    std::cout << "  Узел " << std::hex << peer << std::dec
-                              << " — доступен, последнее сообщение " << age << " мс назад\n";
-                }
-            }
-        }
-        std::cout << "\nCtrl+C — выход\n";
-        std::cout.flush();
-    }
-
-    Config cfg_;
-    uint64_t id_;
-    int sock_ = -1;
-    sockaddr_in dest_{};
-    std::thread receiver_;
-    std::atomic<uint32_t> sequence_{0};
-
-    std::mutex state_mtx_;
-    std::unordered_map<uint64_t, Peer> peers_;
-
-    std::mutex cycle_mtx_;
-    std::condition_variable cycle_cv_;
-    bool pending_ = false;
-    uint32_t pending_seq_ = 0;
-    std::set<uint64_t> expected_;
-    std::set<uint64_t> received_;
-
-    std::mutex stats_mtx_;
-    std::deque<double> samples_;
-    uint64_t cycles_ = 0;
-    uint64_t over_limit_ = 0;
-    uint64_t missed_cycles_ = 0;
-    double last_us_ = 0;
-    size_t last_expected_ = 0;
-    size_t last_received_ = 0;
-    bool last_complete_ = false;
+ void send(const Packet&p){(void)sendto(fd,&p,sizeof p,0,(sockaddr*)&dest,sizeof dest);}
+ void receive(){while(running){Packet p{};sockaddr_in from{};socklen_t n=sizeof from;auto got=recvfrom(fd,&p,sizeof p,0,(sockaddr*)&from,&n);if(got!=sizeof p||H(p.magic)!=MAGIC||H(p.version)!=VERSION)continue;uint64_t who=sender(p);if(who==id)continue;uint32_t type=H(p.type);{std::lock_guard<std::mutex>l(peers_m);peers[who].seen=Clock::now();}
+  if(type==REQUEST){send(make_packet(RESPONSE,id,who,H(p.seq),H(p.value)+1));}
+  else if(type==RESPONSE&&target(p)==id){std::lock_guard<std::mutex>l(cycle_m);if(pending&&H(p.seq)==pending_seq)received.insert(who);cv.notify_one();}
+ }}
+ std::set<uint64_t> active(){std::set<uint64_t> out;auto now=Clock::now();std::lock_guard<std::mutex>l(peers_m);for(auto i=peers.begin();i!=peers.end();)if(now-i->second.seen>PEER_TIMEOUT)i=peers.erase(i);else{out.insert(i->first);++i;}return out;}
+ void cycle(){uint32_t seq=++sequence;auto expected=active();auto start=Clock::now();{std::lock_guard<std::mutex>l(cycle_m);pending=true;pending_seq=seq;expected_set=expected;received.clear();}
+  send(make_packet(REQUEST,id,0,seq,1));auto deadline=start+std::chrono::microseconds(200);{std::unique_lock<std::mutex>l(cycle_m);cv.wait_until(l,deadline,[&]{return !running||std::includes(received.begin(),received.end(),expected_set.begin(),expected_set.end());});pending=false;}
+  double us=std::chrono::duration<double,std::micro>(Clock::now()-start).count();size_t got;{std::lock_guard<std::mutex>l(cycle_m);got=received.size();}bool ok=got>=expected.size();{std::lock_guard<std::mutex>l(stats_m);samples.push_back(us);if(samples.size()>80)samples.pop_front();++cycles;if(us>LIMIT_US)++over;if(!ok)++incomplete;last=us;wanted=expected.size();answered=got;complete=ok;}
+ }
+ void dashboard(){while(running){draw();std::this_thread::sleep_for(std::chrono::milliseconds(250));}draw();}
+ void draw(){std::deque<double>s;uint64_t c,o,inc;double l;size_t w,a;bool ok;{std::lock_guard<std::mutex>g(stats_m);s=samples;c=cycles;o=over;inc=incomplete;l=last;w=wanted;a=answered;ok=complete;}auto ps=active();double avg=0,mn=0,mx=0;if(!s.empty()){avg=std::accumulate(s.begin(),s.end(),0.0)/s.size();auto mm=std::minmax_element(s.begin(),s.end());mn=*mm.first;mx=*mm.second;}
+  std::cout<<"\033[2J\033[H\033[1;36m==================== S O D | LIVE MONITOR ====================\033[0m\n";
+  std::cout<<"Node "<<std::hex<<id<<std::dec<<"   Multicast "<<cfg.group<<":"<<cfg.port<<"   Period "<<cfg.interval_us<<" us\n";
+  std::cout<<"P2P mesh: all peers equal | no coordinator | update 4 times/sec\n\n";
+  std::cout<<"\033[1mPERFORMANCE — last 80 cycles\033[0m\n"<<std::fixed<<std::setprecision(1);
+  std::cout<<"  LAST "<<std::setw(7)<<l<<" us   AVG "<<std::setw(7)<<avg<<" us   MIN "<<std::setw(7)<<mn<<" us   MAX "<<std::setw(7)<<mx<<" us\n";
+  std::cout<<"  Cycles "<<c<<"   >200 us "<<o<<"   incomplete "<<inc<<"   Replies "<<a<<"/"<<w<<"  ";
+  std::cout<<(ok?"\033[1;32mOK\033[0m":"\033[1;31mWAIT/TIMEOUT\033[0m")<<"\n\n";
+  std::cout<<"\033[1mLATENCY HISTORY\033[0m   80 most recent cycles; scale 0..200 us\n  ";
+  const char* levels[] = {"_", "▁", "▂", "▃", "▄", "▅", "▆", "▇", "█"};
+  for (double v : s) {
+      int level = std::clamp(static_cast<int>(v / 25.0) + 1, 1, 8);
+      std::cout << (v > LIMIT_US ? "\033[1;31m" : "\033[1;32m")
+                << levels[level] << "\033[0m";
+  }
+  std::cout<<"\n  older ------------------------------------------------> latest\n\n";
+  std::cout<<"\033[1mACTIVE PEERS\033[0m ("<<ps.size()<<")\n";
+  if(ps.empty())std::cout<<"  Waiting for multicast neighbours...\n";else{std::lock_guard<std::mutex>g(peers_m);for(auto p:ps){auto i=peers.find(p);if(i!=peers.end()){auto age=std::chrono::duration_cast<std::chrono::milliseconds>(Clock::now()-i->second.seen).count();std::cout<<"  \033[32m●\033[0m "<<std::hex<<p<<std::dec<<"   last packet "<<age<<" ms ago\n";}}}
+  std::cout<<"\n\033[90mCtrl+C to exit\033[0m\n"<<std::flush;
+ }
+ Config cfg;uint64_t id;int fd=-1;sockaddr_in dest{};std::thread rx,ui;std::atomic<uint32_t>sequence{0};
+ std::mutex peers_m;std::unordered_map<uint64_t,Peer>peers;
+ std::mutex cycle_m;std::condition_variable cv;bool pending=false;uint32_t pending_seq=0;std::set<uint64_t>expected_set,received;
+ std::mutex stats_m;std::deque<double>samples;uint64_t cycles=0,over=0,incomplete=0;double last=0;size_t wanted=0,answered=0;bool complete=false;
 };
-
-void usage(const char* name) {
-    std::cout << "Использование: " << name << " [параметры]\n"
-              << "  --group IPv4       Multicast-группа (по умолчанию 239.0.0.1)\n"
-              << "  --port PORT        UDP-порт (по умолчанию 5000)\n"
-              << "  --iface IPv4       IPv4 сетевого интерфейса (по умолчанию 0.0.0.0)\n"
-              << "  --interval-us N    Пауза между циклами, мкс (по умолчанию 10000)\n"
-              << "  --help             Показать эту справку\n";
+void usage(const char*n){std::cout<<"Usage: "<<n<<" [--group IPv4] [--port N] [--iface IPv4] [--interval-us N]\nDefault interval: 1000 us\n";}
 }
-}
-
-int main(int argc, char** argv) {
-    Config cfg;
-    for (int i = 1; i < argc; ++i) {
-        std::string a = argv[i];
-        if (a == "--help") { usage(argv[0]); return 0; }
-        else if (a == "--group" && i + 1 < argc) cfg.group = argv[++i];
-        else if (a == "--iface" && i + 1 < argc) cfg.iface = argv[++i];
-        else if (a == "--port" && i + 1 < argc) {
-            int p = std::stoi(argv[++i]);
-            if (p < 1 || p > 65535) { std::cerr << "Некорректный порт\n"; return 2; }
-            cfg.port = static_cast<uint16_t>(p);
-        } else if (a == "--interval-us" && i + 1 < argc) {
-            int v = std::stoi(argv[++i]);
-            if (v < 1000 || v > 10000000) {
-                std::cerr << "Интервал должен быть от 1000 до 10000000 мкс\n";
-                return 2;
-            }
-            cfg.interval_us = static_cast<unsigned>(v);
-        } else {
-            std::cerr << "Неизвестный параметр: " << a << "\n";
-            usage(argv[0]);
-            return 2;
-        }
-    }
-
-    Node node(cfg);
-    if (!node.init()) return 1;
-    std::cout << "Запуск узла ПО «Сод»...\n";
-    node.run();
-    return 0;
-}
+int main(int argc,char**argv){Config c;for(int i=1;i<argc;i++){std::string a=argv[i];if(a=="--help"){usage(argv[0]);return 0;}else if(a=="--group"&&i+1<argc)c.group=argv[++i];else if(a=="--iface"&&i+1<argc)c.iface=argv[++i];else if(a=="--port"&&i+1<argc){int p=std::stoi(argv[++i]);if(p<1||p>65535)return 2;c.port=p;}else if(a=="--interval-us"&&i+1<argc){int v=std::stoi(argv[++i]);if(v<100||v>10000000){std::cerr<<"Interval must be 100..10000000 us\n";return 2;}c.interval_us=v;}else{usage(argv[0]);return 2;}}Node n(c);if(!n.init())return 1;n.run();}
