@@ -17,7 +17,7 @@ int main()
     addr.sin_family = AF_INET;
     addr.sin_port = htons(5000);
 
-    inet_pton(AF_INET, "192.168.67.1",
+    inet_pton(AF_INET, "239.10.10.10",
               &addr.sin_addr);
 
     const char* message = "Hello Multicast!";

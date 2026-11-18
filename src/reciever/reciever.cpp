@@ -31,7 +31,7 @@ int main()
 
     ip_mreq mreq{};
 
-    inet_pton(AF_INET, "192.168.67.1",
+    inet_pton(AF_INET, "239.10.10.10",
               &mreq.imr_multiaddr);
 
     mreq.imr_interface.s_addr = INADDR_ANY;
