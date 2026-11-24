@@ -1,1 +1,0 @@
-/usr/bin/c++ CMakeFiles/sod.dir/src/main.cpp.o CMakeFiles/sod.dir/src/config.cpp.o CMakeFiles/sod.dir/src/multicast.cpp.o CMakeFiles/sod.dir/src/discovery.cpp.o -o sod  -lpthread 

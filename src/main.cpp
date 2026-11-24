@@ -64,20 +64,30 @@ static std::string bar(double value_us, double limit_us, unsigned width) {
     return "[" + std::string(count, '#') + std::string(width - count, ' ') + "]";
 }
 
-static void print_timing_graph(uint64_t seq, double send_us, double receive_us,
-                               double compute_us, double total_us, unsigned width) {
+static void print_dashboard(uint64_t seq, double send_us, double receive_us,
+                           double compute_us, double total_us, unsigned width,
+                           const std::vector<std::pair<uint32_t, std::string>>& peers,
+                           uint32_t local_node_id, bool redraw) {
     constexpr double LIMIT_US = 200.0;
-    std::cout << "\nЦикл " << seq << " | шкала: 0.." << LIMIT_US << " мкс\n"
-              << " TX   " << bar(send_us, LIMIT_US, width) << ' '
-              << std::fixed << std::setprecision(2) << send_us << " мкс\n"
-              << " RX   " << bar(receive_us, LIMIT_US, width) << ' '
-              << receive_us << " мкс\n"
-              << " CPU  " << bar(compute_us, LIMIT_US, width) << ' '
-              << compute_us << " мкс\n"
-              << " ALL  " << bar(total_us, LIMIT_US, width) << ' '
-              << total_us << " мкс";
-    if (total_us > LIMIT_US) std::cout << "  <--- ПРЕВЫШЕНИЕ 200 мкс";
-    std::cout << "\n";
+    constexpr unsigned PEER_ROWS = 8;
+    constexpr unsigned DASHBOARD_ROWS = 5 + 1 + PEER_ROWS;
+    if (redraw) std::cout << "\033[" << DASHBOARD_ROWS << "A";
+    const auto line = [](const std::string& text) { std::cout << "\033[2K" << text << "\n"; };
+    line("Цикл " + std::to_string(seq) + " | шкала: 0..200 мкс");
+    std::ostringstream tx, rx, cpu, all;
+    tx << " TX   " << bar(send_us, LIMIT_US, width) << ' ' << std::fixed << std::setprecision(2) << send_us << " мкс";
+    rx << " RX   " << bar(receive_us, LIMIT_US, width) << ' ' << std::fixed << std::setprecision(2) << receive_us << " мкс";
+    cpu << " CPU  " << bar(compute_us, LIMIT_US, width) << ' ' << std::fixed << std::setprecision(2) << compute_us << " мкс";
+    all << " ALL  " << bar(total_us, LIMIT_US, width) << ' ' << std::fixed << std::setprecision(2) << total_us << " мкс";
+    if (total_us > LIMIT_US) all << "  <--- ПРЕВЫШЕНИЕ 200 мкс";
+    line(tx.str()); line(rx.str()); line(cpu.str()); line(all.str());
+    line("Активные устройства (обновление по heartbeat): включая node_id=" + std::to_string(local_node_id));
+    std::ostringstream peers_line;
+    peers_line << "Всего: " << peers.size() + 1 << " | удалённых: " << peers.size();
+    for (const auto& peer : peers) peers_line << " | " << peer.first << " (" << peer.second << ')';
+    line(peers_line.str());
+    for (unsigned i = 0; i < PEER_ROWS - 1; ++i) line("");
+    std::cout.flush();
 }
 
 int main(int argc, char** argv) {
@@ -87,6 +97,7 @@ int main(int argc, char** argv) {
         const bool terminal_graph = config_bool(config_path, "terminal_graph", false);
         const unsigned graph_width = std::max(10U, std::min(100U,
             config_uint(config_path, "graph_width", 50)));
+        const unsigned graph_refresh_ms = std::max(20U, config_uint(config_path, "graph_refresh_ms", 100));
         Multicast network(cfg);
         PeerDiscovery discovery(cfg);
 
@@ -110,6 +121,8 @@ int main(int argc, char** argv) {
 
         auto print_peer_events = [&]() {
             for (const auto& event : discovery.take_events()) {
+                // При активном dashboard список peer отображается в фиксированной панели.
+                if (terminal_graph) continue;
                 if (event.type == PeerEvent::Type::Joined) {
                     std::cout << "\n[ONLINE] Обнаружен узел " << event.node_id
                               << " с IP " << event.ip << "\n";
@@ -122,6 +135,8 @@ int main(int argc, char** argv) {
         };
 
         uint64_t seq = 0;
+        bool graph_drawn = false;
+        auto next_graph_refresh = std::chrono::steady_clock::now();
         auto next_peer_status = std::chrono::steady_clock::now() +
             std::chrono::milliseconds(cfg.peer_status_interval_ms);
         while (cfg.cycles == 0 || seq < cfg.cycles) {
@@ -161,24 +176,17 @@ int main(int argc, char** argv) {
                    << send_us << ',' << receive_us << ',' << compute_us << ','
                    << total_us << ',' << (complete ? 1 : 0) << '\n';
 
-            if (terminal_graph) {
-                print_timing_graph(seq, send_us, receive_us, compute_us,
-                                   total_us, graph_width);
-            }
-
-            // Сводка о составе сети печатается по настенным часам, а не по числу циклов.
+            // Состав сети отображается в панели графика, без вывода в новую строку.
             const auto status_now = std::chrono::steady_clock::now();
             if (status_now >= next_peer_status) {
                 print_peer_events();
-                const auto active = discovery.peers();
-                std::cout << "\n[PEERS] Активных удалённых узлов: " << active.size()
-                          << "; всего видимых с этим узлом: " << active.size() + 1
-                          << " (включая текущий node_id=" << cfg.node_id << ")";
-                for (const auto& peer : active)
-                    std::cout << " | node_id=" << peer.first << " ip=" << peer.second;
-                std::cout << "\n";
-                next_peer_status = status_now +
-                    std::chrono::milliseconds(cfg.peer_status_interval_ms);
+                next_peer_status = status_now + std::chrono::milliseconds(cfg.peer_status_interval_ms);
+            }
+            if (terminal_graph && std::chrono::steady_clock::now() >= next_graph_refresh) {
+                print_dashboard(seq, send_us, receive_us, compute_us, total_us, graph_width,
+                               discovery.peers(), cfg.node_id, graph_drawn);
+                graph_drawn = true;
+                next_graph_refresh = std::chrono::steady_clock::now() + std::chrono::milliseconds(graph_refresh_ms);
             }
             if (seq % 100 == 0) {
                 cycles.flush();
