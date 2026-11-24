@@ -1,20 +1,10 @@
 #pragma once
-#include <cstdint>
 #include <string>
-
 struct Config {
-    uint32_t node_id = 1;
-    uint32_t expected_nodes = 2;
-    std::string multicast_group = "239.10.10.10";
-    uint16_t multicast_port = 50000;
-    std::string interface_ip = "0.0.0.0";
-    uint32_t receive_timeout_us = 150;
-    uint32_t heartbeat_interval_ms = 250;
-    uint32_t peer_timeout_ms = 1500;
-    uint32_t peer_status_interval_ms = 1000;
-    uint64_t cycles = 10000;
-    std::string cycle_log = "timing_cycles.csv";
-    std::string packet_log = "timing_packets.csv";
+ int node_id=1, expected_nodes=2, data_port=5000, discovery_port=5001;
+ std::string multicast_group="239.10.10.10", interface_ip="0.0.0.0";
+ size_t payload_size_bytes=2048, chunk_payload_bytes=1200;
+ int cycle_period_us=1000, receive_timeout_us=140, heartbeat_interval_ms=250, peer_timeout_ms=1500, peer_status_interval_ms=1000, graph_width=48, graph_refresh_ms=100;
+ bool terminal_graph=true, csv_logging=true;
 };
-
 Config load_config(const std::string& path);
