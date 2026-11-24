@@ -1,103 +1,196 @@
-#include <arpa/inet.h>
+#include "config.hpp"
+#include "multicast.hpp"
+#include "discovery.hpp"
 #include <algorithm>
-#include <atomic>
 #include <chrono>
-#include <condition_variable>
-#include <csignal>
-#include <cstdint>
-#include <deque>
+#include <fstream>
 #include <iomanip>
-#include <iostream>
-#include <mutex>
-#include <numeric>
-#include <random>
-#include <set>
+#include <sstream>
 #include <string>
-#include <thread>
-#include <unordered_map>
-#include <sys/socket.h>
-#include <unistd.h>
+#include <unordered_set>
+#include <iostream>
+#include <stdexcept>
+#include <time.h>
 
-namespace {
-using Clock = std::chrono::steady_clock;
-constexpr uint32_t MAGIC=0x534F4431, VERSION=1, HEARTBEAT=1, REQUEST=2, RESPONSE=3;
-constexpr double LIMIT_US=200.0;
-constexpr auto PEER_TIMEOUT=std::chrono::seconds(3);
-#pragma pack(push,1)
-struct Packet { uint32_t magic,version,type,id_hi,id_lo,target_hi,target_lo,seq,value; };
-#pragma pack(pop)
-std::atomic<bool> running{true};
-void stop(int){running=false;}
-uint64_t make_id(){std::random_device r; uint64_t x=(uint64_t(r())<<32)^r()^(uint64_t(getpid())<<16)^Clock::now().time_since_epoch().count(); return x?x:1;}
-uint32_t hi(uint64_t x){return uint32_t(x>>32);} uint32_t lo(uint64_t x){return uint32_t(x);}
-uint64_t join(uint32_t h,uint32_t l){return (uint64_t(h)<<32)|l;}
-uint32_t H(uint32_t x){return ntohl(x);} uint32_t N(uint32_t x){return htonl(x);}
-Packet make_packet(uint32_t t,uint64_t id,uint64_t target,uint32_t seq,uint32_t val=0){return {N(MAGIC),N(VERSION),N(t),N(hi(id)),N(lo(id)),N(hi(target)),N(lo(target)),N(seq),N(val)};}
-uint64_t sender(const Packet&p){return join(H(p.id_hi),H(p.id_lo));}
-uint64_t target(const Packet&p){return join(H(p.target_hi),H(p.target_lo));}
-struct Config{std::string group="239.0.0.1",iface="0.0.0.0"; uint16_t port=5000; unsigned interval_us=1000;};
-struct Peer{Clock::time_point seen;};
-class Node{
-public:
- explicit Node(Config c):cfg(std::move(c)),id(make_id()){}
- bool init(){
-  fd=socket(AF_INET,SOCK_DGRAM,0); if(fd<0){perror("socket");return false;}
-  int yes=1,buf=1<<20; setsockopt(fd,SOL_SOCKET,SO_REUSEADDR,&yes,sizeof yes); setsockopt(fd,SOL_SOCKET,SO_RCVBUF,&buf,sizeof buf); setsockopt(fd,SOL_SOCKET,SO_SNDBUF,&buf,sizeof buf);
-  timeval tv{0,100000}; setsockopt(fd,SOL_SOCKET,SO_RCVTIMEO,&tv,sizeof tv);
-  sockaddr_in local{}; local.sin_family=AF_INET;local.sin_port=htons(cfg.port);local.sin_addr.s_addr=htonl(INADDR_ANY);
-  if(bind(fd,(sockaddr*)&local,sizeof local)<0){perror("bind");return false;}
-  ip_mreq m{}; if(inet_pton(AF_INET,cfg.group.c_str(),&m.imr_multiaddr)!=1||inet_pton(AF_INET,cfg.iface.c_str(),&m.imr_interface)!=1){std::cerr<<"Invalid group/interface\n";return false;}
-  if(setsockopt(fd,IPPROTO_IP,IP_ADD_MEMBERSHIP,&m,sizeof m)<0){perror("IP_ADD_MEMBERSHIP");return false;}
-  unsigned char ttl=1,loop=1;setsockopt(fd,IPPROTO_IP,IP_MULTICAST_TTL,&ttl,sizeof ttl);setsockopt(fd,IPPROTO_IP,IP_MULTICAST_LOOP,&loop,sizeof loop);
-  if(m.imr_interface.s_addr!=htonl(INADDR_ANY))setsockopt(fd,IPPROTO_IP,IP_MULTICAST_IF,&m.imr_interface,sizeof m.imr_interface);
-  dest.sin_family=AF_INET;dest.sin_port=htons(cfg.port);inet_pton(AF_INET,cfg.group.c_str(),&dest.sin_addr);return true;
- }
- void run(){
-  signal(SIGINT,stop);signal(SIGTERM,stop);rx=std::thread(&Node::receive,this);ui=std::thread(&Node::dashboard,this);
-  auto hb=Clock::now(),next=hb;
-  while(running){auto now=Clock::now();if(now>=hb){send(make_packet(HEARTBEAT,id,0,0));hb=now+std::chrono::seconds(1);}if(now>=next){cycle();next=Clock::now()+std::chrono::microseconds(cfg.interval_us);}std::this_thread::sleep_until(std::min(next,hb));}
-  if (rx.joinable()) rx.join();
-  if (ui.joinable()) ui.join();
-  close(fd);
-  std::cout << "\nStopped.\n";
- }
-private:
- void send(const Packet&p){(void)sendto(fd,&p,sizeof p,0,(sockaddr*)&dest,sizeof dest);}
- void receive(){while(running){Packet p{};sockaddr_in from{};socklen_t n=sizeof from;auto got=recvfrom(fd,&p,sizeof p,0,(sockaddr*)&from,&n);if(got!=sizeof p||H(p.magic)!=MAGIC||H(p.version)!=VERSION)continue;uint64_t who=sender(p);if(who==id)continue;uint32_t type=H(p.type);{std::lock_guard<std::mutex>l(peers_m);peers[who].seen=Clock::now();}
-  if(type==REQUEST){send(make_packet(RESPONSE,id,who,H(p.seq),H(p.value)+1));}
-  else if(type==RESPONSE&&target(p)==id){std::lock_guard<std::mutex>l(cycle_m);if(pending&&H(p.seq)==pending_seq)received.insert(who);cv.notify_one();}
- }}
- std::set<uint64_t> active(){std::set<uint64_t> out;auto now=Clock::now();std::lock_guard<std::mutex>l(peers_m);for(auto i=peers.begin();i!=peers.end();)if(now-i->second.seen>PEER_TIMEOUT)i=peers.erase(i);else{out.insert(i->first);++i;}return out;}
- void cycle(){uint32_t seq=++sequence;auto expected=active();auto start=Clock::now();{std::lock_guard<std::mutex>l(cycle_m);pending=true;pending_seq=seq;expected_set=expected;received.clear();}
-  send(make_packet(REQUEST,id,0,seq,1));auto deadline=start+std::chrono::microseconds(200);{std::unique_lock<std::mutex>l(cycle_m);cv.wait_until(l,deadline,[&]{return !running||std::includes(received.begin(),received.end(),expected_set.begin(),expected_set.end());});pending=false;}
-  double us=std::chrono::duration<double,std::micro>(Clock::now()-start).count();size_t got;{std::lock_guard<std::mutex>l(cycle_m);got=received.size();}bool ok=got>=expected.size();{std::lock_guard<std::mutex>l(stats_m);samples.push_back(us);if(samples.size()>80)samples.pop_front();++cycles;if(us>LIMIT_US)++over;if(!ok)++incomplete;last=us;wanted=expected.size();answered=got;complete=ok;}
- }
- void dashboard(){while(running){draw();std::this_thread::sleep_for(std::chrono::milliseconds(250));}draw();}
- void draw(){std::deque<double>s;uint64_t c,o,inc;double l;size_t w,a;bool ok;{std::lock_guard<std::mutex>g(stats_m);s=samples;c=cycles;o=over;inc=incomplete;l=last;w=wanted;a=answered;ok=complete;}auto ps=active();double avg=0,mn=0,mx=0;if(!s.empty()){avg=std::accumulate(s.begin(),s.end(),0.0)/s.size();auto mm=std::minmax_element(s.begin(),s.end());mn=*mm.first;mx=*mm.second;}
-  std::cout<<"\033[2J\033[H\033[1;36m==================== S O D | LIVE MONITOR ====================\033[0m\n";
-  std::cout<<"Node "<<std::hex<<id<<std::dec<<"   Multicast "<<cfg.group<<":"<<cfg.port<<"   Period "<<cfg.interval_us<<" us\n";
-  std::cout<<"P2P mesh: all peers equal | no coordinator | update 4 times/sec\n\n";
-  std::cout<<"\033[1mPERFORMANCE — last 80 cycles\033[0m\n"<<std::fixed<<std::setprecision(1);
-  std::cout<<"  LAST "<<std::setw(7)<<l<<" us   AVG "<<std::setw(7)<<avg<<" us   MIN "<<std::setw(7)<<mn<<" us   MAX "<<std::setw(7)<<mx<<" us\n";
-  std::cout<<"  Cycles "<<c<<"   >200 us "<<o<<"   incomplete "<<inc<<"   Replies "<<a<<"/"<<w<<"  ";
-  std::cout<<(ok?"\033[1;32mOK\033[0m":"\033[1;31mWAIT/TIMEOUT\033[0m")<<"\n\n";
-  std::cout<<"\033[1mLATENCY HISTORY\033[0m   80 most recent cycles; scale 0..200 us\n  ";
-  const char* levels[] = {"_", "▁", "▂", "▃", "▄", "▅", "▆", "▇", "█"};
-  for (double v : s) {
-      int level = std::clamp(static_cast<int>(v / 25.0) + 1, 1, 8);
-      std::cout << (v > LIMIT_US ? "\033[1;31m" : "\033[1;32m")
-                << levels[level] << "\033[0m";
-  }
-  std::cout<<"\n  older ------------------------------------------------> latest\n\n";
-  std::cout<<"\033[1mACTIVE PEERS\033[0m ("<<ps.size()<<")\n";
-  if(ps.empty())std::cout<<"  Waiting for multicast neighbours...\n";else{std::lock_guard<std::mutex>g(peers_m);for(auto p:ps){auto i=peers.find(p);if(i!=peers.end()){auto age=std::chrono::duration_cast<std::chrono::milliseconds>(Clock::now()-i->second.seen).count();std::cout<<"  \033[32m●\033[0m "<<std::hex<<p<<std::dec<<"   last packet "<<age<<" ms ago\n";}}}
-  std::cout<<"\n\033[90mCtrl+C to exit\033[0m\n"<<std::flush;
- }
- Config cfg;uint64_t id;int fd=-1;sockaddr_in dest{};std::thread rx,ui;std::atomic<uint32_t>sequence{0};
- std::mutex peers_m;std::unordered_map<uint64_t,Peer>peers;
- std::mutex cycle_m;std::condition_variable cv;bool pending=false;uint32_t pending_seq=0;std::set<uint64_t>expected_set,received;
- std::mutex stats_m;std::deque<double>samples;uint64_t cycles=0,over=0,incomplete=0;double last=0;size_t wanted=0,answered=0;bool complete=false;
-};
-void usage(const char*n){std::cout<<"Usage: "<<n<<" [--group IPv4] [--port N] [--iface IPv4] [--interval-us N]\nDefault interval: 1000 us\n";}
+static uint64_t now_ns() {
+    timespec ts{};
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return uint64_t(ts.tv_sec) * 1'000'000'000ULL + uint64_t(ts.tv_nsec);
 }
-int main(int argc,char**argv){Config c;for(int i=1;i<argc;i++){std::string a=argv[i];if(a=="--help"){usage(argv[0]);return 0;}else if(a=="--group"&&i+1<argc)c.group=argv[++i];else if(a=="--iface"&&i+1<argc)c.iface=argv[++i];else if(a=="--port"&&i+1<argc){int p=std::stoi(argv[++i]);if(p<1||p>65535)return 2;c.port=p;}else if(a=="--interval-us"&&i+1<argc){int v=std::stoi(argv[++i]);if(v<100||v>10000000){std::cerr<<"Interval must be 100..10000000 us\n";return 2;}c.interval_us=v;}else{usage(argv[0]);return 2;}}Node n(c);if(!n.init())return 1;n.run();}
+
+
+static bool config_bool(const std::string& path, const std::string& key, bool fallback) {
+    std::ifstream in(path);
+    std::string line;
+    while (std::getline(in, line)) {
+        const auto first = line.find_first_not_of(" \t\r\n");
+        if (first == std::string::npos) continue;
+        line = line.substr(first);
+        if (line.empty() || line[0] == '#' || line[0] == ';') continue;
+        const auto pos = line.find('=');
+        if (pos == std::string::npos) continue;
+        std::string k = line.substr(0, pos);
+        k.erase(k.find_last_not_of(" \t\r\n") + 1);
+        if (k != key) continue;
+        std::string v = line.substr(pos + 1);
+        const auto vf = v.find_first_not_of(" \t\r\n");
+        if (vf == std::string::npos) return fallback;
+        v = v.substr(vf);
+        return v == "true" || v == "1" || v == "yes" || v == "on";
+    }
+    return fallback;
+}
+
+static unsigned config_uint(const std::string& path, const std::string& key, unsigned fallback) {
+    std::ifstream in(path);
+    std::string line;
+    while (std::getline(in, line)) {
+        const auto first = line.find_first_not_of(" \t\r\n");
+        if (first == std::string::npos) continue;
+        line = line.substr(first);
+        if (line.empty() || line[0] == '#' || line[0] == ';') continue;
+        const auto pos = line.find('=');
+        if (pos == std::string::npos || line.substr(0, pos) != key) continue;
+        try { return static_cast<unsigned>(std::stoul(line.substr(pos + 1))); }
+        catch (...) { return fallback; }
+    }
+    return fallback;
+}
+
+static std::string bar(double value_us, double limit_us, unsigned width) {
+    if (width == 0) width = 1;
+    const auto count = static_cast<unsigned>(
+        std::min<double>(width, value_us / limit_us * width));
+    return "[" + std::string(count, '#') + std::string(width - count, ' ') + "]";
+}
+
+static void print_timing_graph(uint64_t seq, double send_us, double receive_us,
+                               double compute_us, double total_us, unsigned width) {
+    constexpr double LIMIT_US = 200.0;
+    std::cout << "\nЦикл " << seq << " | шкала: 0.." << LIMIT_US << " мкс\n"
+              << " TX   " << bar(send_us, LIMIT_US, width) << ' '
+              << std::fixed << std::setprecision(2) << send_us << " мкс\n"
+              << " RX   " << bar(receive_us, LIMIT_US, width) << ' '
+              << receive_us << " мкс\n"
+              << " CPU  " << bar(compute_us, LIMIT_US, width) << ' '
+              << compute_us << " мкс\n"
+              << " ALL  " << bar(total_us, LIMIT_US, width) << ' '
+              << total_us << " мкс";
+    if (total_us > LIMIT_US) std::cout << "  <--- ПРЕВЫШЕНИЕ 200 мкс";
+    std::cout << "\n";
+}
+
+int main(int argc, char** argv) {
+    try {
+        const std::string config_path = argc > 1 ? argv[1] : "config.ini";
+        const Config cfg = load_config(config_path);
+        const bool terminal_graph = config_bool(config_path, "terminal_graph", false);
+        const unsigned graph_width = std::max(10U, std::min(100U,
+            config_uint(config_path, "graph_width", 50)));
+        Multicast network(cfg);
+        PeerDiscovery discovery(cfg);
+
+        std::ofstream cycles(cfg.cycle_log);
+        std::ofstream packets(cfg.packet_log);
+        if (!cycles || !packets) throw std::runtime_error("Не удалось открыть CSV-файлы");
+
+        cycles << "sequence,node_id,received_nodes,missing_nodes,send_us,receive_wait_us,compute_us,total_us,complete\n";
+        packets << "sequence,local_node_id,remote_node_id,arrival_from_cycle_start_us,value\n";
+        cycles << std::fixed << std::setprecision(3);
+        packets << std::fixed << std::setprecision(3);
+
+        std::cout << "SOD multicast: node " << cfg.node_id << ", ожидается узлов: "
+                  << cfg.expected_nodes << "\n";
+
+        std::cout << "Discovery запущен: heartbeat каждые "
+                  << cfg.heartbeat_interval_ms << " мс; тайм-аут узла "
+                  << cfg.peer_timeout_ms << " мс\n";
+        std::cout << "Ожидание обнаружения соседних узлов...\n";
+        std::cout << "Период сводки по узлам: " << cfg.peer_status_interval_ms << " мс\n";
+
+        auto print_peer_events = [&]() {
+            for (const auto& event : discovery.take_events()) {
+                if (event.type == PeerEvent::Type::Joined) {
+                    std::cout << "\n[ONLINE] Обнаружен узел " << event.node_id
+                              << " с IP " << event.ip << "\n";
+                } else {
+                    std::cout << "\n[OFFLINE] Узел " << event.node_id
+                              << " (" << event.ip << ") не присылал heartbeat "
+                              << cfg.peer_timeout_ms << " мс\n";
+                }
+            }
+        };
+
+        uint64_t seq = 0;
+        auto next_peer_status = std::chrono::steady_clock::now() +
+            std::chrono::milliseconds(cfg.peer_status_interval_ms);
+        while (cfg.cycles == 0 || seq < cfg.cycles) {
+            ++seq;
+            const uint64_t cycle_start = now_ns();
+
+            // Тестовая полезная нагрузка. Каждый узел публикует своё значение.
+            const uint32_t local_value = cfg.node_id;
+            const uint64_t send_start = now_ns();
+            network.send(seq, local_value);
+            const uint64_t send_end = now_ns();
+
+            const auto received = network.receive_cycle(
+                seq, cfg.expected_nodes, cfg.receive_timeout_us);
+            const uint64_t receive_end = now_ns();
+
+            const uint64_t compute_start = now_ns();
+            volatile uint32_t calculation = 1U + 1U; // Заглушка вычисления
+            (void)calculation;
+            const uint64_t compute_end = now_ns();
+            const uint64_t cycle_end = compute_end;
+
+            for (const auto& p : received) {
+                packets << seq << ',' << cfg.node_id << ',' << p.node_id << ','
+                        << (p.arrival_ns - cycle_start) / 1000.0 << ',' << p.value << '\n';
+            }
+
+            const auto us = [](uint64_t ns) { return ns / 1000.0; };
+            const bool complete = received.size() == cfg.expected_nodes;
+            const double send_us = us(send_end - send_start);
+            const double receive_us = us(receive_end - send_end);
+            const double compute_us = us(compute_end - compute_start);
+            const double total_us = us(cycle_end - cycle_start);
+
+            cycles << seq << ',' << cfg.node_id << ',' << received.size() << ','
+                   << (cfg.expected_nodes - received.size()) << ','
+                   << send_us << ',' << receive_us << ',' << compute_us << ','
+                   << total_us << ',' << (complete ? 1 : 0) << '\n';
+
+            if (terminal_graph) {
+                print_timing_graph(seq, send_us, receive_us, compute_us,
+                                   total_us, graph_width);
+            }
+
+            // Сводка о составе сети печатается по настенным часам, а не по числу циклов.
+            const auto status_now = std::chrono::steady_clock::now();
+            if (status_now >= next_peer_status) {
+                print_peer_events();
+                const auto active = discovery.peers();
+                std::cout << "\n[PEERS] Активных удалённых узлов: " << active.size()
+                          << "; всего видимых с этим узлом: " << active.size() + 1
+                          << " (включая текущий node_id=" << cfg.node_id << ")";
+                for (const auto& peer : active)
+                    std::cout << " | node_id=" << peer.first << " ip=" << peer.second;
+                std::cout << "\n";
+                next_peer_status = status_now +
+                    std::chrono::milliseconds(cfg.peer_status_interval_ms);
+            }
+            if (seq % 100 == 0) {
+                cycles.flush();
+                packets.flush();
+            }
+        }
+        cycles.flush();
+        packets.flush();
+        std::cout << "Завершено. CSV: " << cfg.cycle_log << ", " << cfg.packet_log << "\n";
+    } catch (const std::exception& e) {
+        std::cerr << "Ошибка: " << e.what() << '\n';
+        return 1;
+    }
+    return 0;
+}
