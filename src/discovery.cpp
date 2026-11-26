@@ -46,11 +46,23 @@ Discovery::Discovery(const Config& config)
 
     ip_mreq membership{};
     membership.imr_multiaddr.s_addr = inet_addr(group.c_str());
+    // Если IP интерфейса задан в config.ini, слушаем multicast через него.
+    // 0.0.0.0 оставляет выбор интерфейса операционной системе.
     membership.imr_interface.s_addr = inet_addr(iface.c_str());
 
     if (setsockopt(sock, IPPROTO_IP, IP_ADD_MEMBERSHIP,
                    &membership, sizeof membership) < 0) {
         throw std::runtime_error("discovery join failed");
+    }
+
+    // Указываем тот же интерфейс и для исходящих multicast-маяков.
+    if (iface != "0.0.0.0") {
+        in_addr outgoing_interface{};
+        outgoing_interface.s_addr = inet_addr(iface.c_str());
+        if (setsockopt(sock, IPPROTO_IP, IP_MULTICAST_IF,
+                       &outgoing_interface, sizeof outgoing_interface) < 0) {
+            throw std::runtime_error("discovery multicast interface failed");
+        }
     }
 
     // После настройки сокета запускаем фоновую проверку соседей.
@@ -83,40 +95,58 @@ void Discovery::run() {
     destination.sin_port = htons(port);
     destination.sin_addr.s_addr = inet_addr(group.c_str());
 
-    sockaddr_in sender{};
-    socklen_t sender_length = sizeof sender;
     char buffer[128];
 
     while (!stop) {
-        // Отправляем маяк, чтобы другие компьютеры могли обнаружить этот узел.
-        Beacon beacon{htonl(BEACON_MAGIC), htons(1), 0, htonl(static_cast<uint32_t>(id))};
+        // Периодически отправляем маяк, сообщая соседям, что узел активен.
+        Beacon beacon{htonl(BEACON_MAGIC), htons(1), 0,
+                      htonl(static_cast<uint32_t>(id))};
         sendto(sock, &beacon, sizeof beacon, 0,
                reinterpret_cast<sockaddr*>(&destination), sizeof destination);
 
-        // Не ждём бесконечно: таймаут соответствует интервалу маяков.
+        // За этот интервал принимаем все доступные маяки, а не только один.
         timeval receive_timeout{};
-        receive_timeout.tv_usec = heartbeat * 1000;
+        receive_timeout.tv_sec = heartbeat / 1000;
+        receive_timeout.tv_usec = (heartbeat % 1000) * 1000;
         setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO,
                    &receive_timeout, sizeof receive_timeout);
 
-        const ssize_t received = recvfrom(sock, buffer, sizeof buffer, 0,
-                                         reinterpret_cast<sockaddr*>(&sender),
-                                         &sender_length);
-        if (received == static_cast<ssize_t>(sizeof beacon)) {
+        const auto deadline = std::chrono::steady_clock::now() +
+                              std::chrono::milliseconds(heartbeat);
+        while (!stop && std::chrono::steady_clock::now() < deadline) {
+            sockaddr_in sender{};
+            socklen_t sender_length = sizeof sender;
+            const ssize_t received = recvfrom(sock, buffer, sizeof buffer, 0,
+                                             reinterpret_cast<sockaddr*>(&sender),
+                                             &sender_length);
+            if (received < 0) {
+                break; // Таймаут — пора отправить следующий маяк.
+            }
+            if (received != static_cast<ssize_t>(sizeof(Beacon))) {
+                continue;
+            }
+
             Beacon incoming{};
             memcpy(&incoming, buffer, sizeof incoming);
+            if (ntohl(incoming.magic) != BEACON_MAGIC || ntohs(incoming.version) != 1) {
+                continue;
+            }
 
-            if (ntohl(incoming.magic) == BEACON_MAGIC && ntohs(incoming.version) == 1) {
-                const int peer_id = static_cast<int>(ntohl(incoming.id));
-                if (peer_id != id) {
-                    last_seen[peer_id] = std::chrono::steady_clock::now();
-                    std::lock_guard<std::mutex> lock(peers_mutex);
-                    shared_peers[peer_id] = inet_ntoa(sender.sin_addr);
-                }
+            const int peer_id = static_cast<int>(ntohl(incoming.id));
+            if (peer_id == id) {
+                continue; // Игнорируем собственный маяк.
+            }
+
+            last_seen[peer_id] = std::chrono::steady_clock::now();
+            char address_text[INET_ADDRSTRLEN]{};
+            inet_ntop(AF_INET, &sender.sin_addr, address_text, sizeof address_text);
+            {
+                std::lock_guard<std::mutex> lock(peers_mutex);
+                shared_peers[peer_id] = address_text;
             }
         }
 
-        // Если от узла давно не было маяков, убираем его из списка.
+        // Удаляем узлы, от которых больше не приходят маяки.
         const auto now = std::chrono::steady_clock::now();
         for (auto it = last_seen.begin(); it != last_seen.end();) {
             if (now - it->second > std::chrono::milliseconds(timeout)) {
