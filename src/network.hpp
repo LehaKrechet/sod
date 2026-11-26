@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <string>
 #include <vector>
+#include <cstdint>
 
 struct Received {
     int node_id;

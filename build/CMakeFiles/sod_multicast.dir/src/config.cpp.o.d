@@ -1,7 +1,7 @@
 CMakeFiles/sod_multicast.dir/src/config.cpp.o: \
- /home/krechet/home/institute/institute_file_git/instrument_sredstv/sod/src/config.cpp \
+ /home/krechet/home/institute/institute_file_git/instrument_sredstv/work_sod/src/config.cpp \
  /usr/include/stdc-predef.h \
- /home/krechet/home/institute/institute_file_git/instrument_sredstv/sod/src/config.hpp \
+ /home/krechet/home/institute/institute_file_git/instrument_sredstv/work_sod/src/config.hpp \
  /usr/include/c++/13/string /usr/include/c++/13/bits/requires_hosted.h \
  /usr/include/x86_64-linux-gnu/c++/13/bits/c++config.h \
  /usr/include/x86_64-linux-gnu/c++/13/bits/os_defines.h \

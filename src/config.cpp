@@ -62,6 +62,7 @@ Config load_config(const std::string& path) {
             else if (key == "payload_size_bytes") config.payload_size_bytes = std::stoul(value);
             else if (key == "chunk_payload_bytes") config.chunk_payload_bytes = std::stoul(value);
             else if (key == "cycle_period_us") config.cycle_period_us = std::stoi(value);
+            else if (key == "max_cycles") config.max_cycles = std::stoi(value);
             else if (key == "receive_timeout_us") config.receive_timeout_us = std::stoi(value);
             else if (key == "heartbeat_interval_ms") config.heartbeat_interval_ms = std::stoi(value);
             else if (key == "peer_timeout_ms") config.peer_timeout_ms = std::stoi(value);
@@ -69,7 +70,9 @@ Config load_config(const std::string& path) {
             else if (key == "graph_width") config.graph_width = std::stoi(value);
             else if (key == "graph_refresh_ms") config.graph_refresh_ms = std::stoi(value);
             else if (key == "terminal_graph") config.terminal_graph = (value == "true" || value == "1");
-            else if (key == "csv_logging") config.csv_logging = (value == "true" || value == "1");
+            else if (key == "cpu_affinity") config.cpu_affinity = std::stoi(value);
+            else if (key == "realtime_priority") config.realtime_priority = std::stoi(value);
+            else if (key == "lock_memory") config.lock_memory = (value == "true" || value == "1");
         } catch (...) {
             throw std::runtime_error("Invalid value for config key: " + key);
         }
@@ -82,6 +85,9 @@ Config load_config(const std::string& path) {
     if (config.chunk_payload_bytes < 256 || config.chunk_payload_bytes > 1400) {
         throw std::runtime_error("chunk_payload_bytes must be 256..1400 (safe MTU)");
     }
+    if (config.cpu_affinity < -1) throw std::runtime_error("cpu_affinity must be -1 or a CPU index");
+    if (config.realtime_priority < 0 || config.realtime_priority > 99) throw std::runtime_error("realtime_priority must be 0..99");
+    if (config.max_cycles < 0) throw std::runtime_error("max_cycles must be >=0");
     if (config.expected_nodes < 1) {
         throw std::runtime_error("expected_nodes must be >=1");
     }

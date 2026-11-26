@@ -89,8 +89,8 @@ DataNetwork::~DataNetwork() {
     }
 }
 
-void DataNetwork::send_message(uint64_t seq, const std::vector<uint8_t>& data,
-                               int node_id) {
+void DataNetwork::send_message(uint64_t seq, const std::vector<uint8_t>& data, int node_id) {
+
     sockaddr_in destination{};
     destination.sin_family = AF_INET;
     destination.sin_port = htons(port);
@@ -101,7 +101,8 @@ void DataNetwork::send_message(uint64_t seq, const std::vector<uint8_t>& data,
         (data.size() + chunk_max - 1) / chunk_max);
     uint8_t packet[1500];
 
-    // Большое сообщение отправляется несколькими UDP-пакетами.
+    // В диагностическом режиме замеряем каждый системный вызов sendto.
+    // Время измеряется часами steady_clock; подробности сохраняются в памяти.
     for (uint16_t i = 0; i < chunk_count; ++i) {
         const size_t offset = static_cast<size_t>(i) * chunk_max;
         const size_t length = std::min(chunk_max, data.size() - offset);
@@ -118,8 +119,9 @@ void DataNetwork::send_message(uint64_t seq, const std::vector<uint8_t>& data,
 
         memcpy(packet, &header, sizeof header);
         memcpy(packet + sizeof header, data.data() + offset, length);
-        sendto(sock, packet, sizeof header + length, 0,
-               reinterpret_cast<sockaddr*>(&destination), sizeof destination);
+
+        (void)sendto(sock, packet, sizeof header + length, 0,
+                                   reinterpret_cast<sockaddr*>(&destination), sizeof destination);
     }
 }
 

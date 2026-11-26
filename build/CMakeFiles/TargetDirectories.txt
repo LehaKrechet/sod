@@ -1,3 +1,3 @@
-/home/krechet/home/institute/institute_file_git/instrument_sredstv/sod/build/CMakeFiles/sod_multicast.dir
-/home/krechet/home/institute/institute_file_git/instrument_sredstv/sod/build/CMakeFiles/edit_cache.dir
-/home/krechet/home/institute/institute_file_git/instrument_sredstv/sod/build/CMakeFiles/rebuild_cache.dir
+/home/krechet/home/institute/institute_file_git/instrument_sredstv/work_sod/build/CMakeFiles/sod_multicast.dir
+/home/krechet/home/institute/institute_file_git/instrument_sredstv/work_sod/build/CMakeFiles/edit_cache.dir
+/home/krechet/home/institute/institute_file_git/instrument_sredstv/work_sod/build/CMakeFiles/rebuild_cache.dir

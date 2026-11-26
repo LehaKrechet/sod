@@ -53,10 +53,10 @@ RM = /usr/bin/cmake -E rm -f
 EQUALS = =
 
 # The top-level source directory on which CMake was run.
-CMAKE_SOURCE_DIR = /home/krechet/home/institute/institute_file_git/instrument_sredstv/sod
+CMAKE_SOURCE_DIR = /home/krechet/home/institute/institute_file_git/instrument_sredstv/work_sod
 
 # The top-level build directory on which CMake was run.
-CMAKE_BINARY_DIR = /home/krechet/home/institute/institute_file_git/instrument_sredstv/sod/build
+CMAKE_BINARY_DIR = /home/krechet/home/institute/institute_file_git/instrument_sredstv/work_sod/build
 
 # Include any dependencies generated for this target.
 include CMakeFiles/sod_multicast.dir/depend.make
@@ -70,60 +70,60 @@ include CMakeFiles/sod_multicast.dir/progress.make
 include CMakeFiles/sod_multicast.dir/flags.make
 
 CMakeFiles/sod_multicast.dir/src/main.cpp.o: CMakeFiles/sod_multicast.dir/flags.make
-CMakeFiles/sod_multicast.dir/src/main.cpp.o: /home/krechet/home/institute/institute_file_git/instrument_sredstv/sod/src/main.cpp
+CMakeFiles/sod_multicast.dir/src/main.cpp.o: /home/krechet/home/institute/institute_file_git/instrument_sredstv/work_sod/src/main.cpp
 CMakeFiles/sod_multicast.dir/src/main.cpp.o: CMakeFiles/sod_multicast.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/krechet/home/institute/institute_file_git/instrument_sredstv/sod/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_1) "Building CXX object CMakeFiles/sod_multicast.dir/src/main.cpp.o"
-	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/sod_multicast.dir/src/main.cpp.o -MF CMakeFiles/sod_multicast.dir/src/main.cpp.o.d -o CMakeFiles/sod_multicast.dir/src/main.cpp.o -c /home/krechet/home/institute/institute_file_git/instrument_sredstv/sod/src/main.cpp
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/krechet/home/institute/institute_file_git/instrument_sredstv/work_sod/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_1) "Building CXX object CMakeFiles/sod_multicast.dir/src/main.cpp.o"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/sod_multicast.dir/src/main.cpp.o -MF CMakeFiles/sod_multicast.dir/src/main.cpp.o.d -o CMakeFiles/sod_multicast.dir/src/main.cpp.o -c /home/krechet/home/institute/institute_file_git/instrument_sredstv/work_sod/src/main.cpp
 
 CMakeFiles/sod_multicast.dir/src/main.cpp.i: cmake_force
 	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Preprocessing CXX source to CMakeFiles/sod_multicast.dir/src/main.cpp.i"
-	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /home/krechet/home/institute/institute_file_git/instrument_sredstv/sod/src/main.cpp > CMakeFiles/sod_multicast.dir/src/main.cpp.i
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /home/krechet/home/institute/institute_file_git/instrument_sredstv/work_sod/src/main.cpp > CMakeFiles/sod_multicast.dir/src/main.cpp.i
 
 CMakeFiles/sod_multicast.dir/src/main.cpp.s: cmake_force
 	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Compiling CXX source to assembly CMakeFiles/sod_multicast.dir/src/main.cpp.s"
-	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/krechet/home/institute/institute_file_git/instrument_sredstv/sod/src/main.cpp -o CMakeFiles/sod_multicast.dir/src/main.cpp.s
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/krechet/home/institute/institute_file_git/instrument_sredstv/work_sod/src/main.cpp -o CMakeFiles/sod_multicast.dir/src/main.cpp.s
 
 CMakeFiles/sod_multicast.dir/src/config.cpp.o: CMakeFiles/sod_multicast.dir/flags.make
-CMakeFiles/sod_multicast.dir/src/config.cpp.o: /home/krechet/home/institute/institute_file_git/instrument_sredstv/sod/src/config.cpp
+CMakeFiles/sod_multicast.dir/src/config.cpp.o: /home/krechet/home/institute/institute_file_git/instrument_sredstv/work_sod/src/config.cpp
 CMakeFiles/sod_multicast.dir/src/config.cpp.o: CMakeFiles/sod_multicast.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/krechet/home/institute/institute_file_git/instrument_sredstv/sod/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_2) "Building CXX object CMakeFiles/sod_multicast.dir/src/config.cpp.o"
-	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/sod_multicast.dir/src/config.cpp.o -MF CMakeFiles/sod_multicast.dir/src/config.cpp.o.d -o CMakeFiles/sod_multicast.dir/src/config.cpp.o -c /home/krechet/home/institute/institute_file_git/instrument_sredstv/sod/src/config.cpp
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/krechet/home/institute/institute_file_git/instrument_sredstv/work_sod/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_2) "Building CXX object CMakeFiles/sod_multicast.dir/src/config.cpp.o"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/sod_multicast.dir/src/config.cpp.o -MF CMakeFiles/sod_multicast.dir/src/config.cpp.o.d -o CMakeFiles/sod_multicast.dir/src/config.cpp.o -c /home/krechet/home/institute/institute_file_git/instrument_sredstv/work_sod/src/config.cpp
 
 CMakeFiles/sod_multicast.dir/src/config.cpp.i: cmake_force
 	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Preprocessing CXX source to CMakeFiles/sod_multicast.dir/src/config.cpp.i"
-	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /home/krechet/home/institute/institute_file_git/instrument_sredstv/sod/src/config.cpp > CMakeFiles/sod_multicast.dir/src/config.cpp.i
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /home/krechet/home/institute/institute_file_git/instrument_sredstv/work_sod/src/config.cpp > CMakeFiles/sod_multicast.dir/src/config.cpp.i
 
 CMakeFiles/sod_multicast.dir/src/config.cpp.s: cmake_force
 	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Compiling CXX source to assembly CMakeFiles/sod_multicast.dir/src/config.cpp.s"
-	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/krechet/home/institute/institute_file_git/instrument_sredstv/sod/src/config.cpp -o CMakeFiles/sod_multicast.dir/src/config.cpp.s
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/krechet/home/institute/institute_file_git/instrument_sredstv/work_sod/src/config.cpp -o CMakeFiles/sod_multicast.dir/src/config.cpp.s
 
 CMakeFiles/sod_multicast.dir/src/network.cpp.o: CMakeFiles/sod_multicast.dir/flags.make
-CMakeFiles/sod_multicast.dir/src/network.cpp.o: /home/krechet/home/institute/institute_file_git/instrument_sredstv/sod/src/network.cpp
+CMakeFiles/sod_multicast.dir/src/network.cpp.o: /home/krechet/home/institute/institute_file_git/instrument_sredstv/work_sod/src/network.cpp
 CMakeFiles/sod_multicast.dir/src/network.cpp.o: CMakeFiles/sod_multicast.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/krechet/home/institute/institute_file_git/instrument_sredstv/sod/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_3) "Building CXX object CMakeFiles/sod_multicast.dir/src/network.cpp.o"
-	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/sod_multicast.dir/src/network.cpp.o -MF CMakeFiles/sod_multicast.dir/src/network.cpp.o.d -o CMakeFiles/sod_multicast.dir/src/network.cpp.o -c /home/krechet/home/institute/institute_file_git/instrument_sredstv/sod/src/network.cpp
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/krechet/home/institute/institute_file_git/instrument_sredstv/work_sod/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_3) "Building CXX object CMakeFiles/sod_multicast.dir/src/network.cpp.o"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/sod_multicast.dir/src/network.cpp.o -MF CMakeFiles/sod_multicast.dir/src/network.cpp.o.d -o CMakeFiles/sod_multicast.dir/src/network.cpp.o -c /home/krechet/home/institute/institute_file_git/instrument_sredstv/work_sod/src/network.cpp
 
 CMakeFiles/sod_multicast.dir/src/network.cpp.i: cmake_force
 	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Preprocessing CXX source to CMakeFiles/sod_multicast.dir/src/network.cpp.i"
-	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /home/krechet/home/institute/institute_file_git/instrument_sredstv/sod/src/network.cpp > CMakeFiles/sod_multicast.dir/src/network.cpp.i
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /home/krechet/home/institute/institute_file_git/instrument_sredstv/work_sod/src/network.cpp > CMakeFiles/sod_multicast.dir/src/network.cpp.i
 
 CMakeFiles/sod_multicast.dir/src/network.cpp.s: cmake_force
 	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Compiling CXX source to assembly CMakeFiles/sod_multicast.dir/src/network.cpp.s"
-	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/krechet/home/institute/institute_file_git/instrument_sredstv/sod/src/network.cpp -o CMakeFiles/sod_multicast.dir/src/network.cpp.s
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/krechet/home/institute/institute_file_git/instrument_sredstv/work_sod/src/network.cpp -o CMakeFiles/sod_multicast.dir/src/network.cpp.s
 
 CMakeFiles/sod_multicast.dir/src/discovery.cpp.o: CMakeFiles/sod_multicast.dir/flags.make
-CMakeFiles/sod_multicast.dir/src/discovery.cpp.o: /home/krechet/home/institute/institute_file_git/instrument_sredstv/sod/src/discovery.cpp
+CMakeFiles/sod_multicast.dir/src/discovery.cpp.o: /home/krechet/home/institute/institute_file_git/instrument_sredstv/work_sod/src/discovery.cpp
 CMakeFiles/sod_multicast.dir/src/discovery.cpp.o: CMakeFiles/sod_multicast.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/krechet/home/institute/institute_file_git/instrument_sredstv/sod/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_4) "Building CXX object CMakeFiles/sod_multicast.dir/src/discovery.cpp.o"
-	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/sod_multicast.dir/src/discovery.cpp.o -MF CMakeFiles/sod_multicast.dir/src/discovery.cpp.o.d -o CMakeFiles/sod_multicast.dir/src/discovery.cpp.o -c /home/krechet/home/institute/institute_file_git/instrument_sredstv/sod/src/discovery.cpp
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/krechet/home/institute/institute_file_git/instrument_sredstv/work_sod/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_4) "Building CXX object CMakeFiles/sod_multicast.dir/src/discovery.cpp.o"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/sod_multicast.dir/src/discovery.cpp.o -MF CMakeFiles/sod_multicast.dir/src/discovery.cpp.o.d -o CMakeFiles/sod_multicast.dir/src/discovery.cpp.o -c /home/krechet/home/institute/institute_file_git/instrument_sredstv/work_sod/src/discovery.cpp
 
 CMakeFiles/sod_multicast.dir/src/discovery.cpp.i: cmake_force
 	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Preprocessing CXX source to CMakeFiles/sod_multicast.dir/src/discovery.cpp.i"
-	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /home/krechet/home/institute/institute_file_git/instrument_sredstv/sod/src/discovery.cpp > CMakeFiles/sod_multicast.dir/src/discovery.cpp.i
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /home/krechet/home/institute/institute_file_git/instrument_sredstv/work_sod/src/discovery.cpp > CMakeFiles/sod_multicast.dir/src/discovery.cpp.i
 
 CMakeFiles/sod_multicast.dir/src/discovery.cpp.s: cmake_force
 	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Compiling CXX source to assembly CMakeFiles/sod_multicast.dir/src/discovery.cpp.s"
-	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/krechet/home/institute/institute_file_git/instrument_sredstv/sod/src/discovery.cpp -o CMakeFiles/sod_multicast.dir/src/discovery.cpp.s
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/krechet/home/institute/institute_file_git/instrument_sredstv/work_sod/src/discovery.cpp -o CMakeFiles/sod_multicast.dir/src/discovery.cpp.s
 
 # Object files for target sod_multicast
 sod_multicast_OBJECTS = \
@@ -141,7 +141,7 @@ sod_multicast: CMakeFiles/sod_multicast.dir/src/network.cpp.o
 sod_multicast: CMakeFiles/sod_multicast.dir/src/discovery.cpp.o
 sod_multicast: CMakeFiles/sod_multicast.dir/build.make
 sod_multicast: CMakeFiles/sod_multicast.dir/link.txt
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --bold --progress-dir=/home/krechet/home/institute/institute_file_git/instrument_sredstv/sod/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_5) "Linking CXX executable sod_multicast"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --bold --progress-dir=/home/krechet/home/institute/institute_file_git/instrument_sredstv/work_sod/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_5) "Linking CXX executable sod_multicast"
 	$(CMAKE_COMMAND) -E cmake_link_script CMakeFiles/sod_multicast.dir/link.txt --verbose=$(VERBOSE)
 
 # Rule to build all files generated by this target.
@@ -153,6 +153,6 @@ CMakeFiles/sod_multicast.dir/clean:
 .PHONY : CMakeFiles/sod_multicast.dir/clean
 
 CMakeFiles/sod_multicast.dir/depend:
-	cd /home/krechet/home/institute/institute_file_git/instrument_sredstv/sod/build && $(CMAKE_COMMAND) -E cmake_depends "Unix Makefiles" /home/krechet/home/institute/institute_file_git/instrument_sredstv/sod /home/krechet/home/institute/institute_file_git/instrument_sredstv/sod /home/krechet/home/institute/institute_file_git/instrument_sredstv/sod/build /home/krechet/home/institute/institute_file_git/instrument_sredstv/sod/build /home/krechet/home/institute/institute_file_git/instrument_sredstv/sod/build/CMakeFiles/sod_multicast.dir/DependInfo.cmake "--color=$(COLOR)"
+	cd /home/krechet/home/institute/institute_file_git/instrument_sredstv/work_sod/build && $(CMAKE_COMMAND) -E cmake_depends "Unix Makefiles" /home/krechet/home/institute/institute_file_git/instrument_sredstv/work_sod /home/krechet/home/institute/institute_file_git/instrument_sredstv/work_sod /home/krechet/home/institute/institute_file_git/instrument_sredstv/work_sod/build /home/krechet/home/institute/institute_file_git/instrument_sredstv/work_sod/build /home/krechet/home/institute/institute_file_git/instrument_sredstv/work_sod/build/CMakeFiles/sod_multicast.dir/DependInfo.cmake "--color=$(COLOR)"
 .PHONY : CMakeFiles/sod_multicast.dir/depend
 

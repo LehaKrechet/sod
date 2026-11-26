@@ -16,6 +16,7 @@ struct Config {
     size_t chunk_payload_bytes = 1200;
 
     int cycle_period_us = 1000;
+    int max_cycles = 0; // 0: бесконечный прогон
     int receive_timeout_us = 140;
     int heartbeat_interval_ms = 250;
     int peer_timeout_ms = 1500;
@@ -24,7 +25,9 @@ struct Config {
     int graph_refresh_ms = 100;
 
     bool terminal_graph = true;
-    bool csv_logging = true;
+    int cpu_affinity = -1; // -1: не закреплять поток
+    int realtime_priority = 0; // 0: обычный планировщик, 1..99: SCHED_FIFO
+    bool lock_memory = false;
 };
 
 Config load_config(const std::string& path);
