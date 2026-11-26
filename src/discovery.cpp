@@ -52,7 +52,7 @@ Discovery::Discovery(const Config& config)
 
     if (setsockopt(sock, IPPROTO_IP, IP_ADD_MEMBERSHIP,
                    &membership, sizeof membership) < 0) {
-        throw std::runtime_error("discovery join failed");
+        throw std::runtime_error(std::string("discovery join failed for group ") + group + " on interface " + iface + ": " + std::strerror(errno));
     }
 
     // Указываем тот же интерфейс и для исходящих multicast-маяков.

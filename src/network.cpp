@@ -7,6 +7,8 @@
 #include <poll.h>
 #include <time.h>
 #include <cstring>
+#include <cerrno>
+#include <string>
 #include <stdexcept>
 #include <algorithm>
 
@@ -71,7 +73,7 @@ DataNetwork::DataNetwork(const Config& config)
 
     if (setsockopt(sock, IPPROTO_IP, IP_ADD_MEMBERSHIP,
                    &membership, sizeof membership) < 0) {
-        throw std::runtime_error("data multicast join failed");
+        throw std::runtime_error(std::string("data multicast join failed for group ") + group + " on interface " + iface + ": " + std::strerror(errno));
     }
 
     // Если интерфейс задан явно, отправляем multicast через него.
