@@ -55,6 +55,7 @@ Config load_config(const std::string& path) {
         try {
             if (key == "node_id") config.node_id = std::stoi(value);
             else if (key == "expected_nodes") config.expected_nodes = std::stoi(value);
+            else if (key == "wait_for_nodes") config.wait_for_nodes = (value == "true" || value == "1");
             else if (key == "data_port") config.data_port = std::stoi(value);
             else if (key == "discovery_port") config.discovery_port = std::stoi(value);
             else if (key == "multicast_group") config.multicast_group = value;

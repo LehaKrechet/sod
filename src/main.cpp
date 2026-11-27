@@ -85,13 +85,27 @@ int main(int argc,char* argv[]) {
     std::vector<double> history;history.reserve(config.max_cycles > 0 ? static_cast<size_t>(config.max_cycles) : 1000);
     uint64_t sequence=0;auto dashboard=Clock::now();
     const int remote_expected=config.expected_nodes-1;
+    if(config.wait_for_nodes && remote_expected>0){
+      std::cout << "WAIT: waiting for " << remote_expected << " other device(s)..." << std::flush;
+      while(static_cast<int>(discovery.peers().size()) < remote_expected){
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+      }
+      std::cout << "\nAll expected devices detected. Exchange starting.\n";
+      for(const auto& p:discovery.peers()) std::cout << "  Node " << p.first << " @ " << p.second << "\n";
+    }
+    // Журнал изменений состава узлов. События фиксируются без статистики
+    // принятых/потерянных сообщений и выводятся в конце ограниченного прогона.
+    std::map<int, std::string> tracked_peers = discovery.peers();
+    std::vector<std::string> connection_log;
+    for (const auto& p : tracked_peers)
+        connection_log.push_back("Node " + std::to_string(p.first) + " connected at cycle 0");
     while(true){
       if(config.max_cycles > 0 && sequence >= static_cast<uint64_t>(config.max_cycles)) break;
       ++sequence;const auto start=Clock::now();
       network.send_message(sequence,payload,config.node_id);
       const auto deadline=start+std::chrono::microseconds(config.receive_timeout_us);
       int complete_count=0;
-      while(Clock::now()<deadline && complete_count<remote_expected){
+      while(Clock::now()<deadline){
         int node=0;uint64_t seq=0;uint32_t total=0;uint16_t idx=0,count=0;
         const auto now=Clock::now();if(now>=deadline)break;
         const int remaining=std::max(0,static_cast<int>(std::chrono::duration_cast<std::chrono::microseconds>(deadline-now).count()));
@@ -116,13 +130,27 @@ int main(int argc,char* argv[]) {
       const double total_time=us(start,rx_end);
       if(config.max_cycles==0 && history.size()==1000) history.erase(history.begin());
       history.push_back(total_time);
+      // Проверяем изменения списка обнаруженных узлов. peer_timeout_ms задаёт
+      // сколько времени Discovery ждёт маяки до объявления отключения.
+      const auto current_peers = discovery.peers();
+      for (const auto& old_peer : tracked_peers) {
+        if (current_peers.find(old_peer.first) == current_peers.end())
+          connection_log.push_back("Node " + std::to_string(old_peer.first) + " disconnected after " + std::to_string(sequence) + " cycles");
+      }
+      for (const auto& new_peer : current_peers) {
+        if (tracked_peers.find(new_peer.first) == tracked_peers.end())
+          connection_log.push_back("Node " + std::to_string(new_peer.first) + " connected after " + std::to_string(sequence) + " cycles");
+      }
+      tracked_peers = current_peers;
       if(config.terminal_graph && us(dashboard,Clock::now())>=config.graph_refresh_ms*1000.0){dashboard=Clock::now();std::cout<<"\033[2J\033[H";histogram(history,config.graph_width,discovery.peers());std::cout<<std::flush;}
       if(config.cycle_period_us>0){const auto next=start+std::chrono::microseconds(config.cycle_period_us);if(Clock::now()<next)std::this_thread::sleep_until(next);}
     }
     if(config.max_cycles>0){
       std::cout<<"\nRun finished: "<<sequence<<" cycles. Final histogram (all measured cycles):\n";
       histogram(history,config.graph_width,discovery.peers());
-
+      std::cout << "\nConnection log:\n";
+      for (const auto& event : connection_log) std::cout << "  " << event << "\n";
+      if (connection_log.empty()) std::cout << "  (no connection changes detected)\n";
     }
  }catch(const std::exception& e){std::cerr<<"ERROR: "<<e.what()<<"\n";return 1;}
 }

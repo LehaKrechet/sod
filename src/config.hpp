@@ -6,6 +6,7 @@
 struct Config {
     int node_id = 1;
     int expected_nodes = 2;
+    bool wait_for_nodes = false;
     int data_port = 5000;
     int discovery_port = 5001;
 
